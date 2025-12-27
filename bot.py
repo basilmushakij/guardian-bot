@@ -1,5 +1,5 @@
 # ==============================================================================
-# 🤖 PROJECT: THE SOVEREIGN GUARDIAN (ULTIMATE EDITION)
+# 🤖 PROJECT: THE SOVEREIGN GUARDIAN (FIXED SYNTAX VERSION)
 # ==============================================================================
 
 import os
@@ -47,16 +47,20 @@ intents.message_content = True
 bot = commands.Bot(command_prefix='!', intents=intents)
 
 # ==============================================================================
-# 🗄️ DATABASE MANAGER
+# 🗄️ DATABASE MANAGER (แก้ Syntax แล้ว)
 # ==============================================================================
 def load_json(filename):
     if os.path.exists(filename):
-        try: with open(filename, 'r') as f: return json.load(f)
-        except: return {}
+        try:
+            with open(filename, 'r') as f:
+                return json.load(f)
+        except:
+            return {}
     return {}
 
 def save_json(filename, data):
-    with open(filename, 'w') as f: json.dump(data, f, indent=4)
+    with open(filename, 'w') as f:
+        json.dump(data, f, indent=4)
 
 # ==============================================================================
 # 🎮 PAPER TRADING (ระบบเทรดจำลอง)
@@ -119,15 +123,13 @@ def check_fundamentals(ticker):
         status = "พื้นฐานแกร่ง 💪"
         score = 0
         
-        # กฎเกณฑ์การให้คะแนนพื้นฐาน
         if margin > 0: score += 1      # มีกำไร
         if growth > 0: score += 1      # เติบโต
         if 0 < pe < 60: score += 1     # ราคาไม่เวอร์
         
-        # กฎตายตัว (Veto Rules)
         if margin < 0: 
             status = "ขาดทุน (พื้นฐานแย่) 🩸"
-            score = -1 # บังคับติดลบ
+            score = -1
         elif score == 0: 
             status = "อาการน่าเป็นห่วง 😷"
         
@@ -171,7 +173,6 @@ def analyze_market(ticker):
         insider = stock.insider_transactions
         insider_txt = "ปกติ"
         if insider is not None and not insider.empty:
-             # ถ้าเจอการขายเกิน 2 ครั้งใน 5 รายการล่าสุด
              if sum(1 for i, r in insider.head(5).iterrows() if "sale" in str(r.get('Transaction','')).lower()) >= 2:
                  insider_txt = "🚨 ผู้บริหารเทขาย"
 
@@ -188,14 +189,13 @@ def analyze_market(ticker):
                     news_txt = headlines
                 except: pass
 
-        # --- FINAL SCORING (THE HYBRID FORMULA) ---
+        # --- FINAL SCORING ---
         ai_score = np.clip(((pred_price - curr_price)/curr_price)*10, -1, 1)
         rsi_score = 1 if curr_rsi < 30 else -1 if curr_rsi > 70 else 0
-        fund_impact = (fund['score'] - 1) / 2 # Scale เพื่อนำไปคำนวณ
+        fund_impact = (fund['score'] - 1) / 2
         
         final_score = (ai_score * 0.3) + (rsi_score * 0.2) + (news_score * 0.2) + (fund_impact * 0.3)
         
-        # VETO: ถ้าพื้นฐานแย่ หรือ ผู้บริหารเทขาย ให้กดคะแนนลงทันที
         if fund['score'] == -1: final_score = -1.0 
         if "เทขาย" in insider_txt: final_score -= 0.5
 
@@ -235,7 +235,6 @@ async def ninja_alert_task():
         print("🥷 Ninja Scan Started...")
         portfolios = load_json(PORTFOLIOS_FILE)
         
-        # 1. รวมหุ้นทั้งหมด (ตัดตัวซ้ำ) เพื่อประหยัดโควต้า
         all_tickers = set()
         for tickers in portfolios.values():
             for t in tickers: all_tickers.add(t)
@@ -244,19 +243,16 @@ async def ninja_alert_task():
             await asyncio.sleep(60)
             continue
 
-        # 2. เริ่มสแกนแบบนินจา (สุ่มเวลาพัก)
         for ticker in all_tickers:
             try:
-                # สุ่มพัก 5-10 วินาที หลบระบบกันบอทของ Yahoo
+                # สุ่มพัก 5-10 วินาที
                 sleep_time = random.uniform(5, 10)
                 await asyncio.sleep(sleep_time)
                 
-                # วิเคราะห์เงียบๆ
                 loop = asyncio.get_running_loop()
                 data = await loop.run_in_executor(None, analyze_market, ticker)
                 
                 if data:
-                    # แจ้งเตือนเฉพาะสัญญาณชัดเจน (ลดการรบกวน)
                     if "NOW" in data['signal']:
                         print(f"🚨 FOUND SIGNAL: {ticker} -> {data['signal']}")
                         
@@ -266,7 +262,6 @@ async def ninja_alert_task():
                         embed.add_field(name="พื้นฐาน", value=data['fund']['status'], inline=True)
                         embed.set_footer(text="Ninja Real-time Watch")
                         
-                        # ส่ง DM หาเจ้าของหุ้น
                         for user_id, user_tickers in portfolios.items():
                             if ticker in user_tickers:
                                 try:
@@ -275,7 +270,6 @@ async def ninja_alert_task():
                                 except: pass
             except: pass
 
-        # 3. พักยกก่อนเริ่มรอบใหม่ (สุ่ม 30-60 วินาที) = ถือว่า Real-time มากแล้วสำหรับบอทฟรี
         cooldown = random.uniform(30, 60)
         print(f"☕ Cooling down {cooldown:.0f}s...")
         await asyncio.sleep(cooldown)
@@ -319,19 +313,19 @@ async def wallet(ctx):
 
 @bot.command()
 async def buy(ctx, ticker: str, amount: int):
-    """ซื้อหุ้นจำลอง: !buy AAPL 10"""
+    """ซื้อหุ้นจำลอง"""
     success, msg = execute_trade(ctx.author.id, ticker, "BUY", amount)
     await ctx.send(msg)
 
 @bot.command()
 async def sell(ctx, ticker: str, amount: int):
-    """ขายหุ้นจำลอง: !sell AAPL 5"""
+    """ขายหุ้นจำลอง"""
     success, msg = execute_trade(ctx.author.id, ticker, "SELL", amount)
     await ctx.send(msg)
 
 @bot.command()
 async def check(ctx, ticker: str):
-    """วิเคราะห์หุ้นแบบเต็มสูบ"""
+    """วิเคราะห์หุ้นเต็มสูบ"""
     t = ticker.upper()
     msg = await ctx.send(f"🔍 **กำลังสแกน {t} (พื้นฐาน+กราฟ+ข่าว)...**")
     
@@ -353,7 +347,7 @@ async def check(ctx, ticker: str):
 
 @bot.command()
 async def add(ctx, *tickers):
-    """เพิ่มหุ้นเข้า Watchlist (เพื่อให้บอทเฝ้า)"""
+    """เพิ่มหุ้นเข้า Watchlist"""
     uid=str(ctx.author.id); p=load_json(PORTFOLIOS_FILE); up=p.get(uid,[]); 
     added = [t.upper() for t in tickers if t.upper() not in up]
     up.extend(added); p[uid]=up; save_json(PORTFOLIOS_FILE,p); 
