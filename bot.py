@@ -11,6 +11,21 @@ from tensorflow.keras.models import Sequential, load_model
 from tensorflow.keras.layers import Dense, LSTM, Dropout
 import asyncio
 
+from flask import Flask
+from threading import Thread
+app = Flask('')
+
+@app.route('/')
+def home():
+    return "I'm alive! The bot is running."
+
+def run():
+    app.run(host='0.0.0.0', port=8080)
+
+def keep_alive():
+    t = Thread(target=run)
+    t.start()
+
 DISCORD_BOT_TOKEN = os.environ.get('DISCORD_TOKEN')
 PORTFOLIO_FILE = 'my_portfolio.json'
 
@@ -234,7 +249,11 @@ async def check(ctx, ticker: str):
     else:
         await ctx.send(f"❌ ไม่พบข้อมูล {ticker}")
 
-
+if DISCORD_BOT_TOKEN == '...':
+    print("Error...")
+else:
+    bot.run(DISCORD_BOT_TOKEN)
+    
 if DISCORD_BOT_TOKEN == 'ใส่_BOT_TOKEN_ของคุณที่นี่':
     print("❌ ERROR: ลืมใส่ Token ครับ!")
 else:
