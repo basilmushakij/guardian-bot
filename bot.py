@@ -1,5 +1,5 @@
 # ==============================================================================
-# 🤖 PROJECT: THE ULTIMATE GUARDIAN (FINAL FIX)
+# 🤖 PROJECT: THE ULTIMATE GUARDIAN (FINAL SYNTAX FIX)
 # ==============================================================================
 
 import os
@@ -19,7 +19,7 @@ import yfinance as yf
 from sklearn.preprocessing import MinMaxScaler
 from tensorflow.keras.models import Sequential, load_model
 from tensorflow.keras.layers import Dense, LSTM
-from duckduckgo_search import DDGS # 🦆 ฮีโร่สายฟรี
+from duckduckgo_search import DDGS
 
 # --- 🌐 WEB SERVER ---
 app = Flask('')
@@ -46,7 +46,7 @@ class MyBot(commands.Bot):
     def __init__(self):
         super().__init__(command_prefix='!', intents=discord.Intents.default())
     async def setup_hook(self):
-        await self.tree.sync()
+        await self.tree.sync() # บรรทัดนี้สำคัญ! มันจะซิงค์คำสั่ง / ไปที่ Discord
 
 bot = MyBot()
 
@@ -54,7 +54,6 @@ bot = MyBot()
 # 🦆 FREE SEARCH ENGINE (DUCKDUCKGO)
 # ==============================================================================
 def search_free_intel(ticker):
-    """ใช้น้องเป็ดไปสืบข่าวจากทั่วโลก (ฟรี)"""
     news_text = ""
     try:
         keywords = f"{ticker} stock news rumors analysis"
@@ -313,7 +312,7 @@ async def teach(interaction: discord.Interaction, term: str):
     else: await interaction.followup.send("No API")
 
 # ==============================================================================
-# 🔔 ALERTS
+# 🔔 ALERTS (FIXED INDENTATION)
 # ==============================================================================
 @tasks.loop(seconds=1) 
 async def ninja_alert_task():
@@ -322,7 +321,7 @@ async def ninja_alert_task():
         portfolios = load_json(PORTFOLIOS_FILE)
         all_t = set()
         
-        # --- ✅ ส่วนที่แก้ไข: แยกบรรทัด Loop ให้ถูกต้อง ---
+        # --- จุดที่แก้: เขียนแยกบรรทัดให้ถูกต้อง ---
         for t_list in portfolios.values(): 
             for t in t_list: 
                 all_t.add(t)
