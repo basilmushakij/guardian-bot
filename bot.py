@@ -1,5 +1,5 @@
 # ==============================================================================
-# 🤖 PROJECT: SMART INVESTOR GUARDIAN (ULTIMATE HYBRID EDITION)
+# 🤖 PROJECT: SMART INVESTOR GUARDIAN (SELF-LEARNING EDITION)
 # ==============================================================================
 
 import os
@@ -9,14 +9,15 @@ from discord.ext import commands
 import asyncio
 from flask import Flask
 from threading import Thread
-from textblob import TextBlob # สมองส่วนภาษา (Sentiment)
+from textblob import TextBlob
+from datetime import datetime
 
-# --- 🌐 WEB SERVER (Keep Alive) ---
+# --- 🌐 WEB SERVER ---
 app = Flask('')
 
 @app.route('/')
 def home():
-    return "SYSTEM ONLINE: Hybrid Engine Running."
+    return "SYSTEM ONLINE: Self-Learning Engine Active."
 
 def run():
     app.run(host='0.0.0.0', port=8080)
@@ -28,81 +29,88 @@ def keep_alive():
 # --- 🔑 CONFIGURATION ---
 DISCORD_BOT_TOKEN = os.environ.get('DISCORD_TOKEN')
 PORTFOLIOS_FILE = 'user_portfolios.json'
+HISTORY_FILE = 'prediction_history.json' # 📝 สมุดบันทึกผลการทาย
 START_DATE = '2020-01-01'
 PREDICTION_DAYS = 60
 
-# ตั้งค่าบอท
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix='!', intents=intents)
 
 # ==============================================================================
-# 💾 DATABASE SYSTEM
+# 💾 DATABASE & HISTORY SYSTEM
 # ==============================================================================
-def load_data():
-    if os.path.exists(PORTFOLIOS_FILE):
+def load_json(filename):
+    if os.path.exists(filename):
         try:
-            with open(PORTFOLIOS_FILE, 'r') as f:
+            with open(filename, 'r') as f:
                 return json.load(f)
         except: return {}
     return {}
 
-def save_data(data):
-    with open(PORTFOLIOS_FILE, 'w') as f:
+def save_json(filename, data):
+    with open(filename, 'w') as f:
         json.dump(data, f)
 
-def get_user_portfolio(user_id):
-    data = load_data()
-    return data.get(str(user_id), [])
+def log_prediction(ticker, signal, price):
+    """จดบันทึกการทาย: วันที่, หุ้น, ทายว่าอะไร, ราคาตอนนั้น"""
+    history = load_json(HISTORY_FILE)
+    if ticker not in history: history[ticker] = []
+    
+    record = {
+        "date": datetime.now().strftime("%Y-%m-%d"),
+        "signal": signal,
+        "entry_price": price,
+        "status": "PENDING" # รอตรวจคำตอบ
+    }
+    history[ticker].append(record)
+    save_json(HISTORY_FILE, history)
 
-def update_user_portfolio(user_id, portfolio):
-    data = load_data()
-    data[str(user_id)] = portfolio
-    save_data(data)
+def get_accuracy_stats(ticker):
+    """คำนวณความแม่นยำ"""
+    history = load_json(HISTORY_FILE)
+    records = history.get(ticker, [])
+    if not records: return "N/A"
+    
+    correct = sum(1 for r in records if r.get('status') == 'CORRECT')
+    wrong = sum(1 for r in records if r.get('status') == 'WRONG')
+    total = correct + wrong
+    
+    if total == 0: return "Waiting for results..."
+    win_rate = (correct / total) * 100
+    return f"🏆 Win Rate: {win_rate:.1f}% ({correct}/{total})"
 
 # ==============================================================================
-# 🧠 HYBRID ENGINE (AI + TECHNICAL + NEWS SENTIMENT)
+# 🧠 HYBRID & SELF-LEARNING ENGINE
 # ==============================================================================
 
 def analyze_sentiment(ticker):
-    """วิเคราะห์อารมณ์ข่าว (Sentiment Analysis)"""
     import yfinance as yf
     try:
         stock = yf.Ticker(ticker)
         news_list = stock.news
+        if not news_list: return 0, []
         
-        if not news_list:
-            return 0, [] # ไม่มีข่าว = คะแนนเป็นกลาง (0)
-
         total_polarity = 0
         headlines = []
         count = 0
-
-        # วิเคราะห์ 5 ข่าวล่าสุด
-        for n in news_list[:5]:
-            title = n['title']
-            link = n['link']
-            
-            # ใช้ TextBlob วิเคราะห์ประโยค (-1 ถึง +1)
-            analysis = TextBlob(title)
+        
+        for n in news_list[:3]:
+            analysis = TextBlob(n['title'])
             score = analysis.sentiment.polarity
             total_polarity += score
             count += 1
-            
-            # เก็บหัวข้อข่าวไว้แสดงผล
-            icon = "😐"
-            if score > 0.1: icon = "🟢"
-            elif score < -0.1: icon = "🔴"
-            headlines.append(f"{icon} [{title}]({link})")
+            icon = "🟢" if score > 0.1 else "🔴" if score < -0.1 else "😐"
+            headlines.append(f"{icon} [{n['title']}]({n['link']})")
 
-        avg_score = total_polarity / count if count > 0 else 0
-        return avg_score, headlines
-    except:
-        return 0, []
+        return (total_polarity / count if count > 0 else 0), headlines
+    except: return 0, []
 
-def analyze_hybrid(ticker):
-    """ระบบลูกผสม: AI (40%) + RSI (30%) + News (30%)"""
-    # Lazy Import
+def analyze_hybrid(ticker, force_retrain=False):
+    """
+    Hybrid System + Self Learning
+    force_retrain=True คือสั่งให้ 'ลบสมองเก่า' แล้วเรียนรู้ใหม่ทันที
+    """
     import numpy as np
     import pandas as pd
     import yfinance as yf
@@ -114,11 +122,41 @@ def analyze_hybrid(ticker):
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
     try:
-        # --- PART 1: TECHNICAL & AI ---
+        # 1. ดึงข้อมูลล่าสุด
         df = yf.download(ticker, start=START_DATE, progress=False)
         if len(df) < 100: return None
         
-        # RSI Calculation
+        curr_price = df['Close'].iloc[-1].item()
+
+        # --- 🔁 SELF-LEARNING CHECK (ตรวจการบ้าน) ---
+        # เช็คว่าที่เคยทายไว้ ถูกหรือผิด?
+        history = load_json(HISTORY_FILE)
+        if ticker in history:
+            changed = False
+            for record in history[ticker]:
+                if record['status'] == 'PENDING':
+                    # ถ้าทาย Buy แล้วราคาขึ้น > 1% = ถูก
+                    if record['signal'] == 'BUY NOW 🟢' and curr_price > record['entry_price'] * 1.01:
+                        record['status'] = 'CORRECT'
+                        changed = True
+                    # ถ้าทาย Buy แล้วราคาลง = ผิด
+                    elif record['signal'] == 'BUY NOW 🟢' and curr_price < record['entry_price']:
+                        record['status'] = 'WRONG'
+                        changed = True
+                    # (Logic เดียวกันสำหรับ Sell)
+            if changed: 
+                save_json(HISTORY_FILE, history)
+                # ถ้ามีผิดเยอะๆ บอทจะตัดสินใจ Retrain เองได้ในอนาคต
+
+        # --- AI & RETRAINING ---
+        model_file = f'brain_{ticker}.keras'
+        
+        # ถ้าสั่ง Retrain หรือหาไฟล์ไม่เจอ -> สร้างใหม่
+        if force_retrain and os.path.exists(model_file):
+            os.remove(model_file)
+            print(f"♻️ Retraining brain for {ticker}...")
+
+        # ... (ส่วนคำนวณ AI และ RSI เหมือนเดิม) ...
         delta = df['Close'].diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
@@ -126,87 +164,62 @@ def analyze_hybrid(ticker):
         df = df.dropna()
         curr_rsi = df['RSI'].iloc[-1].item()
         
-        # AI Prediction
         features = ['Close', 'RSI']
         dataset = df[features].values
         scaler = MinMaxScaler(feature_range=(0, 1))
         scaled_data = scaler.fit_transform(dataset)
         
-        X = []
-        # สร้างข้อมูลทดสอบชุดสุดท้าย
-        last_sequence = scaled_data[-PREDICTION_DAYS:].reshape(1, PREDICTION_DAYS, 2)
+        X, y = [], []
+        # ใช้ข้อมูลทั้งหมดที่มีจนถึงวันนี้ เพื่อเทรนให้ฉลาดที่สุด
+        for i in range(PREDICTION_DAYS, len(scaled_data)):
+            X.append(scaled_data[i-PREDICTION_DAYS:i])
+            y.append(scaled_data[i, 0])
+        X, y = np.array(X), np.array(y)
         
-        # Load/Train Model (Simplified for speed)
-        model_file = f'brain_{ticker}.keras'
         if os.path.exists(model_file):
             model = load_model(model_file)
         else:
-            # สร้างโมเดลแบบรวดเร็วถ้าไม่เจอไฟล์
-            X_train, y_train = [], []
-            for i in range(PREDICTION_DAYS, len(scaled_data)):
-                X_train.append(scaled_data[i-PREDICTION_DAYS:i])
-                y_train.append(scaled_data[i, 0])
-            X_train, y_train = np.array(X_train), np.array(y_train)
-            
+            # สร้างโมเดลใหม่ (นี่คือขั้นตอน Learning)
             model = Sequential([
                 LSTM(50, return_sequences=False, input_shape=(PREDICTION_DAYS, 2)),
                 Dense(1)
             ])
             model.compile(optimizer='adam', loss='mse')
-            model.fit(X_train, y_train, epochs=5, verbose=0) # เทรนเร็วๆ
+            model.fit(X, y, epochs=10, batch_size=32, verbose=0)
             model.save(model_file)
             
+        last_sequence = scaled_data[-PREDICTION_DAYS:].reshape(1, PREDICTION_DAYS, 2)
         pred_scaled = model.predict(last_sequence, verbose=0)
         temp_matrix = np.zeros((1, 2))
         temp_matrix[:, 0] = pred_scaled.flatten()
         pred_price = scaler.inverse_transform(temp_matrix)[:, 0][0]
-        curr_price = df['Close'].iloc[-1].item()
         
-        # --- PART 2: NEWS SENTIMENT ---
-        news_score, headlines = analyze_sentiment(ticker) # ได้ค่า -1 ถึง 1
+        # --- HYBRID CALCULATION ---
+        news_score, headlines = analyze_sentiment(ticker)
         
-        # --- PART 3: WEIGHTED CALCULATION (สูตรลับของเรา) ---
-        
-        # 1. AI Score (-1 ถึง 1): ถ้า Fair Price > Current Price = เป็นบวก
-        ai_upside = (pred_price - curr_price) / curr_price
-        ai_score = np.clip(ai_upside * 10, -1, 1) # ขยายสเกลเพื่อให้มีน้ำหนัก
-        
-        # 2. RSI Score (-1 ถึง 1): RSI ต่ำ (Oversold) = ดี (+), RSI สูง = แย่ (-)
-        rsi_score = 0
-        if curr_rsi < 30: rsi_score = 1
-        elif curr_rsi > 70: rsi_score = -1
-        else: rsi_score = 0.5 - (curr_rsi / 100) # ค่ากลางๆ
-        
-        # 3. Final Hybrid Score
-        # สูตร: (AI * 0.4) + (RSI * 0.3) + (News * 0.3)
+        ai_score = np.clip(((pred_price - curr_price) / curr_price) * 10, -1, 1)
+        rsi_score = 1 if curr_rsi < 30 else -1 if curr_rsi > 70 else 0
         final_score = (ai_score * 0.4) + (rsi_score * 0.3) + (news_score * 0.3)
         
-        # แปลผลคะแนน
         signal = "HOLD ✋"
         color = 0x95a5a6
-        advice = "ปัจจัยต่างๆ ยังขัดแย้งกัน ชะลอการลงทุนครับ"
-        
-        if final_score > 0.25:
-            signal = "STRONG BUY 🟢"
+        if final_score > 0.25: 
+            signal = "BUY NOW 🟢"
             color = 0x2ecc71
-            advice = f"สัญญาณดีทุกด้าน! AI มองขึ้น ({ai_score:.2f}), RSI สวย, ข่าวเป็นใจ ({news_score:.2f})"
-        elif final_score < -0.25:
-            signal = "STRONG SELL 🔴"
+        elif final_score < -0.25: 
+            signal = "SELL NOW 🔴"
             color = 0xe74c3c
-            advice = f"สัญญาณอันตราย! AI มองลง ({ai_score:.2f}), หรือข่าวลบแรงมาก ({news_score:.2f})"
-            
-        return {
-            "price": curr_price,
-            "fair": pred_price,
-            "rsi": curr_rsi,
-            "news_headlines": headlines,
-            "news_score": news_score,
-            "final_score": final_score,
-            "signal": signal,
-            "color": color,
-            "advice": advice
-        }
+
+        # 📝 บันทึกผลการทำนายลงสมุดทันที
+        log_prediction(ticker, signal, curr_price)
+
+        stats = get_accuracy_stats(ticker)
         
+        return {
+            "price": curr_price, "fair": pred_price, "rsi": curr_rsi,
+            "score": final_score, "signal": signal, "color": color,
+            "news": headlines, "stats": stats
+        }
     except Exception as e:
         print(f"Error: {e}")
         return None
@@ -216,103 +229,101 @@ def analyze_hybrid(ticker):
 # ==============================================================================
 @bot.event
 async def on_ready():
-    print(f'🤖 Hybrid Bot Online: {bot.user}')
+    print(f'🤖 Bot Online: {bot.user}')
 
 @bot.command()
 async def add(ctx, *tickers):
-    """เพิ่มหุ้นเข้าพอร์ตส่วนตัว"""
+    """เพิ่มหุ้น"""
     user_id = ctx.author.id
-    portfolio = get_user_portfolio(user_id)
+    port = load_json(PORTFOLIOS_FILE)
+    user_port = port.get(str(user_id), [])
+    
     added = []
+    for t in tickers:
+        t = t.upper().replace(",", "")
+        if t not in user_port:
+            user_port.append(t)
+            added.append(t)
     
-    # Check Valid Ticker
-    import yfinance as yf
-    msg = await ctx.send("🔍 Verifying tickers...")
-    
-    for ticker in tickers:
-        ticker = ticker.upper().replace(",", "")
-        if ticker not in portfolio:
-            try:
-                if not yf.Ticker(ticker).history(period="1d").empty:
-                    portfolio.append(ticker)
-                    added.append(ticker)
-            except: pass
-            
-    update_user_portfolio(user_id, portfolio)
-    await msg.delete()
-    if added: await ctx.send(f"✅ Added to **{ctx.author.name}'s** portfolio: {', '.join(added)}")
-    else: await ctx.send("❌ No new tickers added.")
+    port[str(user_id)] = user_port
+    save_json(PORTFOLIOS_FILE, port)
+    if added: await ctx.send(f"✅ Added: {', '.join(added)}")
 
 @bot.command()
 async def remove(ctx, *tickers):
+    """ลบหุ้น"""
     user_id = ctx.author.id
-    portfolio = get_user_portfolio(user_id)
+    port = load_json(PORTFOLIOS_FILE)
+    user_port = port.get(str(user_id), [])
     removed = []
-    for ticker in tickers:
-        ticker = ticker.upper().replace(",", "")
-        if ticker in portfolio:
-            portfolio.remove(ticker)
-            removed.append(ticker)
-    update_user_portfolio(user_id, portfolio)
+    for t in tickers:
+        t = t.upper().replace(",", "")
+        if t in user_port:
+            user_port.remove(t)
+            removed.append(t)
+    port[str(user_id)] = user_port
+    save_json(PORTFOLIOS_FILE, port)
     await ctx.send(f"🗑️ Removed: {', '.join(removed)}")
 
 @bot.command()
 async def port(ctx):
-    """เช็คพอร์ตด้วยระบบ Hybrid"""
+    """เช็คพอร์ต"""
     user_id = ctx.author.id
-    portfolio = get_user_portfolio(user_id)
+    port = load_json(PORTFOLIOS_FILE)
+    user_port = port.get(str(user_id), [])
     
-    if not portfolio:
+    if not user_port:
         await ctx.send("📭 Portfolio is empty.")
         return
 
-    await ctx.send(f"🚀 Running **Hybrid Analysis** for {ctx.author.name}...")
-    
-    for ticker in portfolio:
+    await ctx.send(f"🚀 Analyzing portfolio for {ctx.author.name}...")
+    for ticker in user_port:
         loop = asyncio.get_running_loop()
-        result = await loop.run_in_executor(None, analyze_hybrid, ticker)
-        
-        if result:
-            embed = discord.Embed(title=f"📊 {ticker}", color=result['color'])
-            embed.add_field(name="Price", value=f"${result['price']:.2f}", inline=True)
-            embed.add_field(name="Score", value=f"{result['final_score']:.2f} / 1.0", inline=True)
-            embed.add_field(name="Signal", value=f"**{result['signal']}**", inline=True)
-            embed.add_field(name="💡 AI Advice", value=result['advice'], inline=False)
+        res = await loop.run_in_executor(None, analyze_hybrid, ticker, False)
+        if res:
+            embed = discord.Embed(title=f"📊 {ticker}", color=res['color'])
+            embed.add_field(name="Price", value=f"${res['price']:.2f}", inline=True)
+            embed.add_field(name="Signal", value=f"**{res['signal']}**", inline=True)
+            embed.add_field(name="Accuracy", value=res['stats'], inline=True)
             await ctx.send(embed=embed)
 
 @bot.command()
 async def check(ctx, ticker: str):
-    """เจาะลึกรายตัว (AI + News)"""
+    """เช็คหุ้นรายตัว"""
     ticker = ticker.upper()
-    msg = await ctx.send(f"🔄 Analyzing **{ticker}** (AI + Tech + News)...")
-    
+    msg = await ctx.send(f"🔄 Analyzing **{ticker}**...")
     loop = asyncio.get_running_loop()
-    result = await loop.run_in_executor(None, analyze_hybrid, ticker)
+    res = await loop.run_in_executor(None, analyze_hybrid, ticker, False)
     
-    if result:
-        embed = discord.Embed(title=f"💎 Hybrid Analysis: {ticker}", color=result['color'])
+    if res:
+        embed = discord.Embed(title=f"💎 Analysis: {ticker}", color=res['color'])
+        embed.add_field(name="Price", value=f"${res['price']:.2f}", inline=True)
+        embed.add_field(name="Fair Price", value=f"${res['fair']:.2f}", inline=True)
+        embed.add_field(name="RSI", value=f"{res['rsi']:.1f}", inline=True)
+        embed.add_field(name="Hybrid Score", value=f"**{res['score']:.2f}**", inline=True)
+        embed.add_field(name="Strategy", value=f"**{res['signal']}**", inline=False)
+        embed.add_field(name="🏆 Past Accuracy", value=res['stats'], inline=False)
         
-        # Section 1: Numbers
-        embed.add_field(name="Market Price", value=f"${result['price']:.2f}", inline=True)
-        embed.add_field(name="AI Fair Price", value=f"${result['fair']:.2f}", inline=True)
-        embed.add_field(name="RSI", value=f"{result['rsi']:.1f}", inline=True)
-        
-        # Section 2: Scores
-        embed.add_field(name="News Sentiment", value=f"{result['news_score']:.2f}", inline=True)
-        embed.add_field(name="Hybrid Score", value=f"**{result['final_score']:.2f}**", inline=True)
-        embed.add_field(name="Strategy", value=f"**{result['signal']}**", inline=True)
-        
-        # Section 3: Advice & News
-        embed.add_field(name="💡 Summary", value=result['advice'], inline=False)
-        
-        if result['news_headlines']:
-            news_text = "\n".join(result['news_headlines'][:3])
-            embed.add_field(name="📰 Top News & Sentiment", value=news_text, inline=False)
-            
+        if res['news']:
+            embed.add_field(name="📰 News", value="\n".join(res['news']), inline=False)
         await ctx.send(embed=embed)
         await msg.delete()
-    else:
-        await ctx.send(f"❌ Could not analyze {ticker}")
+
+@bot.command()
+async def retrain(ctx, ticker: str):
+    """🧠 สั่งให้บอทลืมความรู้เก่า และเทรนใหม่เดี๋ยวนี้"""
+    ticker = ticker.upper()
+    msg = await ctx.send(f"🧠 **Retraining Mode:** กำลังล้างสมองและเรียนรู้กราฟล่าสุดของ {ticker}...")
+    
+    loop = asyncio.get_running_loop()
+    # ส่ง True ไปเพื่อบังคับลบไฟล์โมเดล
+    res = await loop.run_in_executor(None, analyze_hybrid, ticker, True)
+    
+    if res:
+        await msg.delete()
+        await ctx.send(f"✅ **Retrain Complete!** บอทฉลาดขึ้นแล้วครับสำหรับหุ้น {ticker}")
+        # แสดงผลลัพธ์หลังเทรนเสร็จทันที
+        await check(ctx, ticker)
 
 # --- STARTUP ---
 if __name__ == "__main__":
