@@ -1,5 +1,5 @@
 # ==============================================================================
-# 🤖 PROJECT: SMART INVESTOR GUARDIAN (ULTIMATE FUSION: JUDGE + LEARNING + PORTFOLIO)
+# 🤖 PROJECT: OMNISCIENT GUARDIAN (GENIUS MENTOR EDITION)
 # ==============================================================================
 
 import os
@@ -13,11 +13,15 @@ import google.generativeai as genai
 import pandas as pd
 from datetime import datetime
 import numpy as np
+import yfinance as yf
+from sklearn.preprocessing import MinMaxScaler
+from tensorflow.keras.models import Sequential, load_model
+from tensorflow.keras.layers import Dense, LSTM
 
 # --- 🌐 WEB SERVER ---
 app = Flask('')
 @app.route('/')
-def home(): return "SYSTEM ONLINE: The Ultimate Guardian is watching."
+def home(): return "SYSTEM ONLINE: Genius Mentor Active."
 def run(): app.run(host='0.0.0.0', port=8080)
 def keep_alive(): t = Thread(target=run); t.start()
 
@@ -29,12 +33,11 @@ HISTORY_FILE = 'prediction_history.json'
 START_DATE = '2020-01-01'
 PREDICTION_DAYS = 60
 
-# ตั้งค่า Gemini
+# ตั้งค่า Gemini (สมองหลัก)
 try:
     if GEMINI_API_KEY:
         genai.configure(api_key=GEMINI_API_KEY)
         model = genai.GenerativeModel('gemini-pro')
-    else: print("⚠️ Warning: GEMINI_API_KEY not found")
 except: pass
 
 intents = discord.Intents.default()
@@ -42,114 +45,160 @@ intents.message_content = True
 bot = commands.Bot(command_prefix='!', intents=intents)
 
 # ==============================================================================
-# 💾 DATABASE SYSTEM (PORTFOLIO & LEARNING)
+# 🗄️ INTELLIGENT MEMORY SYSTEM
 # ==============================================================================
 def load_json(filename):
     if os.path.exists(filename):
-        try:
-            with open(filename, 'r') as f: return json.load(f)
+        try: with open(filename, 'r') as f: return json.load(f)
         except: return {}
     return {}
 
 def save_json(filename, data):
     with open(filename, 'w') as f: json.dump(data, f)
 
-def log_prediction(ticker, signal, price):
-    """จดจำการทำนายเพื่อเรียนรู้"""
-    history = load_json(HISTORY_FILE)
-    if ticker not in history: history[ticker] = []
-    
-    # บันทึกเฉพาะสัญญาณซื้อ/ขายที่ชัดเจน
-    if "BUY" in signal or "SELL" in signal:
-        record = {
-            "date": datetime.now().strftime("%Y-%m-%d"),
-            "signal": signal,
-            "entry_price": price,
-            "status": "PENDING"
-        }
-        history[ticker].append(record)
-        save_json(HISTORY_FILE, history)
-
-def get_accuracy_stats(ticker, current_price):
-    """ตรวจการบ้าน: คำนวณ Win Rate"""
+def get_learning_stats(ticker):
+    """ดึงสถิติความแม่นยำ เพื่อบอก user ว่าบอทน่าเชื่อแค่ไหน"""
     history = load_json(HISTORY_FILE)
     records = history.get(ticker, [])
-    if not records: return "New Stock (No History)"
+    if not records: return "ยังไม่มีข้อมูล (หุ้นใหม่สำหรับบอท)"
     
-    # อัปเดตสถานะ (ตรวจคำตอบ)
-    changed = False
     correct = 0
-    total_checked = 0
+    total = 0
+    current_price = yf.Ticker(ticker).history(period="1d")['Close'].iloc[-1]
     
+    changed = False
     for r in records:
         if r['status'] == 'PENDING':
-            # กฎ: กำไร 1% ถือว่าถูก, ขาดทุนถือว่าผิด
+            # Logic การตรวจการบ้าน
+            entry = r['entry_price']
             if "BUY" in r['signal']:
-                if current_price > r['entry_price'] * 1.01: r['status'] = 'CORRECT'; changed=True
-                elif current_price < r['entry_price']: r['status'] = 'WRONG'; changed=True
+                if current_price > entry * 1.02: r['status']='CORRECT'; changed=True
+                elif current_price < entry * 0.98: r['status']='WRONG'; changed=True
             elif "SELL" in r['signal']:
-                if current_price < r['entry_price'] * 0.99: r['status'] = 'CORRECT'; changed=True
-                elif current_price > r['entry_price']: r['status'] = 'WRONG'; changed=True
+                if current_price < entry * 0.98: r['status']='CORRECT'; changed=True
+                elif current_price > entry * 1.02: r['status']='WRONG'; changed=True
         
         if r['status'] == 'CORRECT': correct += 1
-        if r['status'] != 'PENDING': total_checked += 1
+        if r['status'] != 'PENDING': total += 1
             
     if changed: save_json(HISTORY_FILE, history)
     
-    if total_checked == 0: return "Waiting for results..."
-    win_rate = (correct / total_checked) * 100
-    return f"🏆 Win Rate: {win_rate:.1f}% ({correct}/{total_checked})"
+    if total == 0: return "รอผลการทดสอบ..."
+    win_rate = (correct / total) * 100
+    
+    # แปลผล Win Rate เป็นภาษาคน
+    if win_rate > 70: return f"แม่นยำสูง 🔥 ({win_rate:.0f}%)"
+    elif win_rate > 50: return f"พอใช้ได้ 😐 ({win_rate:.0f}%)"
+    else: return f"บอทยังเดาผิดบ่อย 🥶 ({win_rate:.0f}%)"
+
+def log_signal(ticker, signal, price):
+    if "HOLD" in signal: return
+    history = load_json(HISTORY_FILE)
+    if ticker not in history: history[ticker] = []
+    history[ticker].append({
+        "date": datetime.now().strftime("%Y-%m-%d"),
+        "signal": signal,
+        "entry_price": price,
+        "status": "PENDING"
+    })
+    save_json(HISTORY_FILE, history)
 
 # ==============================================================================
-# 🧠 CORE ENGINE (LOCAL AI + INSIDER + NEWS)
+# 🕵️ ADVANCED DATA GATHERING
 # ==============================================================================
+def get_stock_profile(ticker):
+    """ตรวจสอบว่าเป็นหุ้นปั่นหรือหุ้นดี (Safety Check)"""
+    try:
+        stock = yf.Ticker(ticker)
+        info = stock.info
+        
+        # 1. Market Cap (ขนาดบริษัท)
+        mcap = info.get('marketCap', 0)
+        is_small_cap = mcap < 2000000000 # ต่ำกว่า 2 พันล้านดอลลาร์ ถือว่าเล็ก/เสี่ยง
+        
+        # 2. Beta (ความผันผวน)
+        beta = info.get('beta', 1.0)
+        is_volatile = beta > 1.5 # ผันผวนกว่าตลาด 1.5 เท่า
+        
+        # 3. Description
+        name = info.get('longName', ticker)
+        sector = info.get('sector', 'Unknown')
+        
+        risk_level = "ปลอดภัย ✅"
+        warning_msg = ""
+        
+        if is_small_cap and is_volatile:
+            risk_level = "อันตรายมาก 💀"
+            warning_msg = "⚠️ เตือนเพื่อน: หุ้นตัวนี้ตัวเล็กและเหวี่ยงแรงมาก เหมือนนั่งรถไฟเหาะ ไม่แนะนำถ้าเงินเย็นไม่พอ!"
+        elif is_volatile:
+            risk_level = "ผันผวนสูง ⚡"
+            warning_msg = "⚠️ เตือน: ราคาขึ้นลงแรง ใจต้องนิ่งนะ"
+            
+        return {"name": name, "sector": sector, "risk": risk_level, "warning": warning_msg}
+    except:
+        return {"name": ticker, "sector": "-", "risk": "Unkown", "warning": ""}
+
 def get_insider_activity(ticker):
-    import yfinance as yf
     try:
         stock = yf.Ticker(ticker)
         insider = stock.insider_transactions
-        if insider is None or insider.empty: return "ไม่พบข้อมูล"
-        latest = insider.head(3)
-        summary = ""
-        for i, r in latest.iterrows():
-            summary += f"- {str(i)[:10]}: {r.get('Insider','?')} ({r.get('Transaction','?')}) {r.get('Shares',0)} หุ้น\n"
-        return summary
+        if insider is None or insider.empty: return "ไม่มีข้อมูล (ผู้บริหารนิ่ง)"
+        
+        # ตรวจสอบการเทขาย
+        sell_count = 0
+        details = []
+        for i, r in insider.head(5).iterrows():
+            trans = str(r.get('Transaction', '')).lower()
+            if "sale" in trans: sell_count += 1
+            details.append(f"- {r.get('Insider','?')} ทำรายการ {r.get('Transaction','?')}")
+            
+        summary = "\n".join(details[:3])
+        if sell_count >= 2: return f"🚨 ผู้บริหารเริ่มเทขายของ!\n{summary}"
+        return f"ปกติ (มีการซื้อขายบ้าง)\n{summary}"
     except: return "N/A"
 
-def get_news_summary(ticker):
-    import yfinance as yf
+def get_news_sentiment(ticker):
     try:
+        if not GEMINI_API_KEY: return 0, "No API Key"
         stock = yf.Ticker(ticker)
-        return "\n".join([f"- {n['title']}" for n in stock.news[:3]])
-    except: return "N/A"
+        news = stock.news[:3]
+        if not news: return 0, "ไม่มีข่าวใหม่"
+        
+        headlines = "\n".join([f"- {n['title']}" for n in news])
+        
+        # ให้ Gemini อ่านข่าวแล้วสรุปอารมณ์
+        prompt = f"""
+        Read these news headlines for {ticker}:
+        {headlines}
+        
+        Rate the sentiment from -1.0 (Bad) to 1.0 (Good). Just the number.
+        """
+        response = model.generate_content(prompt)
+        return float(response.text.strip()), headlines
+    except: return 0, "News Error"
 
-def analyze_technical(ticker):
-    """วิเคราะห์กราฟด้วย LSTM และ RSI"""
-    import yfinance as yf
-    from sklearn.preprocessing import MinMaxScaler
-    from tensorflow.keras.models import Sequential, load_model
-    from tensorflow.keras.layers import Dense, LSTM
-    import os
-    
+# ==============================================================================
+# 🧠 GENIUS ENGINE (ALPHA LOGIC v2)
+# ==============================================================================
+def analyze_market(ticker):
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
     try:
+        # Data
         df = yf.download(ticker, start=START_DATE, progress=False)
         if len(df) < 100: return None
-        
         curr_price = df['Close'].iloc[-1].item()
         
-        # RSI
+        # Technicals (RSI)
         delta = df['Close'].diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-        df['RSI'] = 100 - (100 / (1 + (gain / loss)))
-        curr_rsi = df['RSI'].iloc[-1].item()
+        rsi = 100 - (100 / (1 + (gain / loss)))
+        curr_rsi = rsi.iloc[-1].item()
         
-        # LSTM Prediction
+        # AI Forecast (LSTM)
         data = df[['Close']].values
         scaler = MinMaxScaler(feature_range=(0, 1))
         scaled_data = scaler.fit_transform(data)
-        
         X = np.array([scaled_data[-PREDICTION_DAYS:]])
         
         model_file = f'brain_{ticker}.keras'
@@ -158,154 +207,159 @@ def analyze_technical(ticker):
         else:
             ai_model = Sequential([LSTM(50, input_shape=(PREDICTION_DAYS, 1)), Dense(1)])
             ai_model.compile(optimizer='adam', loss='mse')
-            ai_model.fit(X, np.array([scaled_data[-1]]), epochs=1, verbose=0)
+            ai_model.fit(X, np.array([scaled_data[-1]]), epochs=5, verbose=0)
             ai_model.save(model_file)
             
         pred = ai_model.predict(X, verbose=0)
         pred_price = scaler.inverse_transform(pred)[0][0]
         
-        # สร้าง Signal เบื้องต้น
-        trend = "UP 🟢" if pred_price > curr_price else "DOWN 🔴"
-        signal = "HOLD"
-        if pred_price > curr_price * 1.01 and curr_rsi < 65: signal = "BUY NOW 🟢"
-        elif pred_price < curr_price * 0.99 or curr_rsi > 75: signal = "SELL NOW 🔴"
+        # External Factors
+        profile = get_stock_profile(ticker)
+        insider_txt = get_insider_activity(ticker)
+        news_score, news_txt = get_news_sentiment(ticker)
+        
+        # --- SCORING SYSTEM ---
+        # 1. AI Score (-1 to 1)
+        ai_score = np.clip(((pred_price - curr_price)/curr_price)*10, -1, 1)
+        
+        # 2. RSI Score (Contrarian)
+        rsi_score = 1 if curr_rsi < 30 else -1 if curr_rsi > 70 else 0
+        
+        # 3. Final Hybrid Score
+        final_score = (ai_score * 0.4) + (rsi_score * 0.3) + (news_score * 0.3)
+        
+        # Safety Override (ถ้าหุ้นอันตราย ระบบจะเข้มงวดขึ้น)
+        if "อันตราย" in profile['risk']:
+            final_score -= 0.3 # หักคะแนนความเสี่ยง
+            
+        signal = "WAIT ✋"
+        color = 0x95a5a6
+        if final_score > 0.3: signal = "BUY 🟢"; color = 0x2ecc71
+        elif final_score < -0.3: signal = "SELL 🔴"; color = 0xe74c3c
         
         return {
-            "price": curr_price, "ai_price": pred_price, 
-            "rsi": curr_rsi, "trend": trend, "signal": signal
+            "price": curr_price, "rsi": curr_rsi, "score": final_score,
+            "signal": signal, "color": color, 
+            "profile": profile, "insider": insider_txt, "news": news_txt
         }
-    except Exception as e: return None
+    except Exception as e:
+        print(e)
+        return None
 
 # ==============================================================================
-# ⚖️ THE JUDGE (GEMINI)
+# 👨‍🏫 THE MENTOR (GEMINI PERSONA)
 # ==============================================================================
-def consult_judge(ticker, tech, insider, news, stats):
-    if not GEMINI_API_KEY: return "⚠️ (Gemini Disabled) เชื่อกราฟไปก่อนครับ"
+def consult_mentor(ticker, data, stats):
+    if not GEMINI_API_KEY: return "ระบบพี่เลี้ยงไม่ทำงาน (No API Key)"
     
     prompt = f"""
-    วิเคราะห์หุ้น {ticker} สั้นๆ แบบเซียนหุ้น:
-    1. กราฟ: ราคา ${tech['price']:.2f}, AIมอง: {tech['trend']}, RSI: {tech['rsi']:.1f} ({tech['signal']})
-    2. สถิติความแม่นยำบอท: {stats}
-    3. ผู้บริหาร: {insider}
-    4. ข่าว: {news}
+    Role: คุณคือ "พี่เลี้ยงนักลงทุนระดับโลก" ที่ใจดีและฉลาดมาก หน้าที่คือสอนมือใหม่ (ที่ไม่มีความรู้เลย) ให้เข้าใจง่ายๆ
     
-    ขอคำแนะนำ 3 ส่วน:
-    - สถานการณ์: (สั้นๆ)
-    - ความเสี่ยง: (สิ่งที่น่าห่วง)
-    - คำตัดสิน: (ฟันธงว่า เชื่อกราฟดีไหม หรือควรระวังข่าว/ผู้บริหาร)
+    Topic: วิเคราะห์หุ้น {ticker} ({data['profile']['name']})
+    
+    Data:
+    - สัญญาณระบบ: {data['signal']} (คะแนนความน่าซื้อ {data['score']:.2f}/1.0)
+    - ราคา: ${data['price']:.2f}
+    - RSI: {data['rsi']:.1f}
+    - ความเสี่ยง: {data['profile']['risk']}
+    - คำเตือน: {data['profile']['warning']}
+    - ผู้บริหาร: {data['insider']}
+    - ความแม่นของบอท: {stats}
+    
+    Task: เขียนคำแนะนำเป็น 3 ส่วน (ใช้ภาษาพูด เป็นกันเอง ใส่ Emoji ได้):
+    
+    1. 🐣 **ฉบับอนุบาล (ELI5):** เปรียบเทียบสถานการณ์หุ้นตัวนี้กับชีวิตจริง (เช่น เหมือนรถติด, เหมือนของลดราคา, เหมือนวิ่งไล่รถเมล์) เพื่อให้เห็นภาพทันที
+    2. 🧠 **ฉบับศิษย์เอก:** อธิบายเหตุผลจริงๆ ว่าทำไมถึงแนะนำแบบนั้น (อ้างอิงกราฟหรือข่าว) แบบสั้นๆ
+    3. 🎯 **สรุป:** บอกเพื่อนว่า "ทำยังไงต่อดี?" (ซื้อเลย / รอก่อน / หนีไป)
     """
     try:
         response = model.generate_content(prompt)
         return response.text
-    except: return "Gemini กำลังพักผ่อน... (Error calling API)"
+    except: return "พี่เลี้ยงกำลังจิบกาแฟครับ (Gemini Error)"
 
 # ==============================================================================
-# 🎮 DISCORD COMMANDS
+# 🎮 DISCORD INTERFACE
 # ==============================================================================
 @bot.event
-async def on_ready(): print(f'🤖 Ultimate Bot Online: {bot.user}')
+async def on_ready(): print(f'🤖 Genius Mentor Online: {bot.user}')
 
 @bot.command()
-async def add(ctx, *tickers):
-    """(Multi-User) เพิ่มหุ้นเข้าพอร์ตส่วนตัว"""
-    user_id = str(ctx.author.id)
-    port = load_json(PORTFOLIOS_FILE)
-    user_port = port.get(user_id, [])
-    
-    added = []
-    for t in tickers:
-        t = t.upper().replace(",", "")
-        if t not in user_port:
-            user_port.append(t)
-            added.append(t)
-            
-    port[user_id] = user_port
-    save_json(PORTFOLIOS_FILE, port)
-    if added: await ctx.send(f"✅ เพิ่ม {', '.join(added)} เข้าพอร์ตของคุณ {ctx.author.name} แล้ว")
-
-@bot.command()
-async def remove(ctx, *tickers):
-    """(Multi-User) ลบหุ้นออกจากพอร์ต"""
-    user_id = str(ctx.author.id)
-    port = load_json(PORTFOLIOS_FILE)
-    user_port = port.get(user_id, [])
-    
-    removed = []
-    for t in tickers:
-        t = t.upper().replace(",", "")
-        if t in user_port:
-            user_port.remove(t)
-            removed.append(t)
-            
-    port[user_id] = user_port
-    save_json(PORTFOLIOS_FILE, port)
-    await ctx.send(f"🗑️ ลบ {', '.join(removed)} เรียบร้อย")
-
-@bot.command()
-async def port(ctx):
-    """(Fast) สแกนพอร์ตส่วนตัวแบบเร็ว (ไม่ใช้ Gemini เพื่อประหยัดเวลา)"""
-    user_id = str(ctx.author.id)
-    port = load_json(PORTFOLIOS_FILE).get(user_id, [])
-    
-    if not port:
-        await ctx.send("📭 พอร์ตว่างเปล่า (ใช้ !add เพื่อเพิ่มหุ้น)")
+async def teach(ctx, term: str = None):
+    """🎓 สอนคำศัพท์หุ้นแบบเข้าใจง่ายๆ"""
+    if not term:
+        await ctx.send("❓ อยากให้สอนคำไหนพิมพ์มาเลยครับ เช่น `!teach RSI` หรือ `!teach หุ้นปั่น`")
         return
-
-    await ctx.send(f"🚀 กำลังสแกนพอร์ต {len(port)} ตัว ของคุณ {ctx.author.name}...")
-    
-    for ticker in port:
-        loop = asyncio.get_running_loop()
-        tech = await loop.run_in_executor(None, analyze_technical, ticker)
         
-        if tech:
-            stats = get_accuracy_stats(ticker, tech['price']) # เช็คความแม่นยำ
-            color = 0x2ecc71 if "BUY" in tech['signal'] else 0xe74c3c if "SELL" in tech['signal'] else 0x95a5a6
-            
-            embed = discord.Embed(title=f"📊 {ticker}", color=color)
-            embed.add_field(name="Price", value=f"${tech['price']:.2f}", inline=True)
-            embed.add_field(name="Signal", value=f"**{tech['signal']}**", inline=True)
-            embed.add_field(name="Bot Accuracy", value=stats, inline=True)
-            await ctx.send(embed=embed)
+    prompt = f"Explain the investing term '{term}' to a complete beginner using a funny or simple analogy. Keep it short."
+    try:
+        if GEMINI_API_KEY:
+            res = model.generate_content(prompt)
+            await ctx.send(f"🎓 **ห้องเรียนหุ้น:**\n{res.text}")
+        else: await ctx.send("ไม่มีคีย์อาจารย์ใหญ่ครับ (Gemini Key)")
+    except: await ctx.send("อาจารย์ไม่อยู่ครับ")
 
 @bot.command()
 async def check(ctx, ticker: str):
-    """(Deep Dive) วิเคราะห์เจาะลึกด้วย Gemini + Learning"""
-    ticker = ticker.upper()
-    msg = await ctx.send(f"⚖️ **กำลังเปิดศาลไต่สวน {ticker}...**\n(เรียกกราฟ.. สืบ Insider.. อ่านข่าว..)")
+    t = ticker.upper()
+    msg = await ctx.send(f"👨‍🏫 **ครูกำลังตรวจการบ้านหุ้น {t} ให้ครับ... รอแป๊บนะ**")
     
     loop = asyncio.get_running_loop()
     
-    # 1. หาข้อมูลทั้งหมดพร้อมกัน
-    tech_task = loop.run_in_executor(None, analyze_technical, ticker)
-    insider_task = loop.run_in_executor(None, get_insider_activity, ticker)
-    news_task = loop.run_in_executor(None, get_news_summary, ticker)
+    # 1. วิเคราะห์ด้วยคณิตศาสตร์
+    data = await loop.run_in_executor(None, analyze_market, t)
+    if not data: await msg.edit(content="❌ ครูหาหุ้นตัวนี้ไม่เจอครับ พิมพ์ชื่อถูกไหม?"); return
     
-    tech, insider, news = await asyncio.gather(tech_task, insider_task, news_task)
+    # 2. เก็บสถิติ
+    stats = get_learning_stats(t)
+    log_signal(t, data['signal'], data['price'])
     
-    if not tech:
-        await msg.edit(content=f"❌ ไม่พบข้อมูลหุ้น {ticker}")
-        return
-
-    # 2. คำนวณความแม่นยำ และ บันทึกผลการทาย (Self-Learning)
-    stats = get_accuracy_stats(ticker, tech['price'])
-    log_prediction(ticker, tech['signal'], tech['price']) # <--- จดบันทึกตรงนี้!
-
-    # 3. ให้ Gemini ตัดสิน
-    verdict = await loop.run_in_executor(None, consult_judge, ticker, tech, insider, news, stats)
+    # 3. ให้พี่เลี้ยง (Gemini) เรียบเรียงคำพูด
+    advice = await loop.run_in_executor(None, consult_mentor, t, data, stats)
     
     # 4. แสดงผล
-    embed = discord.Embed(title=f"🏛️ คำพิพากษา: {ticker}", color=0xf1c40f)
-    embed.add_field(name="💰 ราคา / RSI", value=f"${tech['price']:.2f} / {tech['rsi']:.1f}", inline=True)
-    embed.add_field(name="🤖 บอททายว่า", value=f"**{tech['signal']}**", inline=True)
-    embed.add_field(name="🏆 ความแม่นในอดีต", value=stats, inline=True)
+    embed = discord.Embed(title=f"📘 รายงานผล: {t} ({data['profile']['name']})", color=data['color'])
     
-    embed.description = f"**👨‍⚖️ มุมมองจาก The Judge:**\n{verdict}"
-    embed.set_footer(text=f"Insider & News included • Self-Learning Active")
+    # Header: สรุปสถานะ
+    embed.add_field(name="สัญญาณวันนี้", value=f"**{data['signal']}**", inline=True)
+    embed.add_field(name="ความเสี่ยง", value=f"**{data['profile']['risk']}**", inline=True)
+    embed.add_field(name="ความแม่นบอท", value=f"{stats}", inline=True)
+    
+    # Warning Box (ถ้ามี)
+    if data['profile']['warning']:
+        embed.add_field(name="🚨 **คำเตือนจากครู**", value=data['profile']['warning'], inline=False)
+    
+    # Body: คำสอนจาก Gemini
+    embed.description = f"{advice}"
+    
+    # Footer: ข้อมูลดิบ (เผื่ออยากดู)
+    footer_txt = f"ราคา: ${data['price']:.2f} | RSI: {data['rsi']:.1f} | AI Score: {data['score']:.2f}"
+    embed.set_footer(text=footer_txt)
     
     await ctx.send(embed=embed)
     await msg.delete()
 
+@bot.command()
+async def add(ctx, *tickers):
+    uid = str(ctx.author.id); port = load_json(PORTFOLIOS_FILE); uport = port.get(uid, [])
+    uport.extend([t.upper() for t in tickers if t.upper() not in uport])
+    port[uid] = uport; save_json(PORTFOLIOS_FILE, port)
+    await ctx.send(f"✅ จด {', '.join(tickers)} ลงสมุดพกให้แล้วครับ")
+
+@bot.command()
+async def port(ctx):
+    uid = str(ctx.author.id); uport = load_json(PORTFOLIOS_FILE).get(uid, [])
+    if not uport: await ctx.send("📭 สมุดพกยังว่างอยู่เลยครับ (ใช้ `!add ชื่อหุ้น` เพื่อเพิ่ม)"); return
+    
+    await ctx.send(f"🚀 **ตรวจสุขภาพพอร์ตของคุณ {ctx.author.name}...**")
+    for t in uport:
+        loop = asyncio.get_running_loop()
+        d = await loop.run_in_executor(None, analyze_market, t)
+        if d:
+            embed = discord.Embed(title=f"{t} : {d['signal']}", color=d['color'])
+            embed.description = f"ความเสี่ยง: {d['profile']['risk']}"
+            if d['profile']['warning']: embed.description += f"\n⚠️ {d['profile']['warning']}"
+            await ctx.send(embed=embed)
+
 if __name__ == "__main__":
     keep_alive()
-    if DISCORD_TOKEN:
-        bot.run(DISCORD_TOKEN)
+    if DISCORD_TOKEN: bot.run(DISCORD_TOKEN)
