@@ -6,5 +6,4 @@ scikit-learn
 joblib
 numpy
 Flask
-textblob
 google-generativeai
