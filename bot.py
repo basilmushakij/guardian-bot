@@ -1,5 +1,5 @@
 # ==============================================================================
-# 🤖 PROJECT: THE ULTIMATE GUARDIAN (ALL FEATURES MERGED)
+# 🤖 PROJECT: THE ULTIMATE GUARDIAN (FIXED INDENTATION)
 # ==============================================================================
 
 import os
@@ -19,7 +19,7 @@ import yfinance as yf
 from sklearn.preprocessing import MinMaxScaler
 from tensorflow.keras.models import Sequential, load_model
 from tensorflow.keras.layers import Dense, LSTM
-from duckduckgo_search import DDGS # 🦆 ฮีโร่สายฟรี
+from duckduckgo_search import DDGS
 
 # --- 🌐 WEB SERVER ---
 app = Flask('')
@@ -57,9 +57,7 @@ def search_free_intel(ticker):
     """ใช้น้องเป็ดไปสืบข่าวจากทั่วโลก (ฟรี)"""
     news_text = ""
     try:
-        # ค้นหาข่าวทั่วไป + ข่าวลือ + Reddit
         keywords = f"{ticker} stock news rumors analysis"
-        # ใช้ DuckDuckGo ดึงข้อมูล 3-5 รายการล่าสุด
         results = DDGS().text(keywords, max_results=3)
         if results:
             for r in results:
@@ -98,23 +96,15 @@ def check_fundamentals(ticker):
         return {"status": status, "score": score}
     except: return {"status": "ไม่ทราบ", "score": 0}
 
-# 🔗 CHAIN REACTION ANALYSIS (Gemini)
 def analyze_chain_reaction(ticker):
-    """ถาม Gemini เรื่องผลกระทบลูกโซ่"""
     if not GEMINI_API_KEY: return "AI Disconnected"
-    prompt = f"""
-    Analyze 'Chain Reaction' for stock {ticker} in Thai.
-    1. Who are major suppliers/customers?
-    2. If {ticker} crashes, which other stocks fall?
-    Short & Concise.
-    """
+    prompt = f"Analyze 'Chain Reaction' for stock {ticker} in Thai. 1. Suppliers/Customers? 2. If {ticker} crashes, who falls? Short & Concise."
     try: return model.generate_content(prompt).text
     except: return "AI Error"
 
 def analyze_market(ticker):
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
     try:
-        # 1. Tech Data
         df = yf.download(ticker, start=START_DATE, progress=False)
         if len(df) < 100: return None
         curr_price = df['Close'].iloc[-1].item()
@@ -124,7 +114,6 @@ def analyze_market(ticker):
         loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
         rsi = (100 - (100 / (1 + (gain / loss)))).iloc[-1].item()
         
-        # 2. AI Forecast
         data = df[['Close']].values
         scaler = MinMaxScaler(feature_range=(0, 1))
         scaled = scaler.fit_transform(data)
@@ -139,7 +128,6 @@ def analyze_market(ticker):
         else: ai = load_model(m_file)
         pred = scaler.inverse_transform(ai.predict(X, verbose=0))[0][0]
         
-        # 3. Fundamentals
         fund = check_fundamentals(ticker)
         stock = yf.Ticker(ticker)
         insider = stock.insider_transactions
@@ -148,37 +136,18 @@ def analyze_market(ticker):
              if sum(1 for i, r in insider.head(5).iterrows() if "sale" in str(r.get('Transaction','')).lower()) >= 2:
                  insider_txt = "🚨 เทขาย"
 
-        # 4. 📰 INTELLIGENCE REPORT (Yahoo + DuckDuckGo)
         news_report = {"summary": "ไม่มีข่าว", "impact": "Low", "panic": False, "advice": "ถือต่อ"}
         all_headlines = ""
-        
-        # Yahoo News
         try:
             news = stock.news[:3]
             if news: all_headlines += "\n".join([f"- [Yahoo] {n['title']}" for n in news])
         except: pass
 
-        # DuckDuckGo News
         all_headlines += "\n" + search_free_intel(ticker)
 
         if GEMINI_API_KEY and all_headlines.strip():
             try:
-                prompt = f"""
-                Analyze mixed news for '{ticker}':
-                {all_headlines}
-                
-                Task:
-                1. Summarize in Thai.
-                2. Impact Level (Low/Medium/Critical).
-                3. Panic Check (YES/NO).
-                4. Advice (Buy/Sell/Wait).
-                
-                Format:
-                Summary: ...
-                Impact: ...
-                Panic: ...
-                Advice: ...
-                """
+                prompt = f"Analyze mixed news for '{ticker}':\n{all_headlines}\nTask: Summarize (Thai), Impact (Low/Med/Crit), Panic(YES/NO), Advice. Format:\nSummary: ...\nImpact: ...\nPanic: ...\nAdvice: ..."
                 res = model.generate_content(prompt).text
                 lines = res.split('\n')
                 for line in lines:
@@ -188,7 +157,6 @@ def analyze_market(ticker):
                     if "Advice:" in line: news_report['advice'] = line.replace("Advice:", "").strip()
             except: pass
 
-        # 5. Scoring
         ai_score = np.clip(((pred - curr_price)/curr_price)*10, -1, 1)
         rsi_score = 1 if rsi < 30 else -1 if rsi > 70 else 0
         fund_adj = (fund['score']-1)/2
@@ -264,16 +232,12 @@ class TradeButtons(discord.ui.View):
 # ==============================================================================
 # 📱 COMMANDS
 # ==============================================================================
-@bot.tree.command(name="check", description="Full Analysis (Intel + Chain Reaction)")
+@bot.tree.command(name="check", description="Full Analysis")
 async def check(interaction: discord.Interaction, ticker: str):
     await interaction.response.defer()
     t = ticker.upper()
     loop = asyncio.get_running_loop()
-    
-    # 1. วิเคราะห์ตลาด + ข่าว (Yahoo + DuckDuckGo)
     d = await loop.run_in_executor(None, analyze_market, t)
-    
-    # 2. วิเคราะห์ลูกโซ่ (Chain Reaction)
     chain_res = await loop.run_in_executor(None, analyze_chain_reaction, t)
     
     if d:
@@ -281,16 +245,13 @@ async def check(interaction: discord.Interaction, ticker: str):
         rpt = d['news_report']
         emb_color = 0xff0000 if rpt['panic'] else d['color']
         
-        em = discord.Embed(title=f"💎 Ultimate Report: {t}", color=emb_color)
-        em.add_field(name="📊 Market Data", value=f"Price: ${d['price']:.2f} (฿{thb:,.0f})\nSignal: **{d['signal']}**", inline=True)
+        em = discord.Embed(title=f"💎 Report: {t}", color=emb_color)
+        em.add_field(name="📊 Data", value=f"Price: ${d['price']:.2f} (฿{thb:,.0f})\nSignal: **{d['signal']}**", inline=True)
         
         panic_icon = "😱 PANIC!" if rpt['panic'] else "😌 CHILL"
-        em.add_field(name="🕵️ Intel Report (DuckDuckGo+Yahoo)", value=f"Summary: {rpt['summary']}\nPanic: {panic_icon}\nAdvice: {rpt['advice']}", inline=False)
-        
+        em.add_field(name="🕵️ Intel Report", value=f"Summary: {rpt['summary']}\nPanic: {panic_icon}\nAdvice: {rpt['advice']}", inline=False)
         em.add_field(name="🔗 Chain Reaction", value=chain_res, inline=False)
-        
-        if d['news_raw']:
-            em.add_field(name="🌐 Sources", value=d['news_raw'][:300] + "...", inline=False)
+        if d['news_raw']: em.add_field(name="🌐 Sources", value=d['news_raw'][:300] + "...", inline=False)
 
         await interaction.followup.send(embed=em, view=TradeButtons(t))
     else: await interaction.followup.send("❌ Error")
@@ -360,7 +321,11 @@ async def ninja_alert_task():
     while not bot.is_closed():
         portfolios = load_json(PORTFOLIOS_FILE)
         all_t = set()
-        for t_list in portfolios.values(): for t in t_list: all_t.add(t)
+        # --- FIX: แยกบรรทัด Loop เพื่อแก้ Syntax Error ---
+        for t_list in portfolios.values(): 
+            for t in t_list: 
+                all_t.add(t)
+        
         if not all_t: await asyncio.sleep(60); continue
         
         for t in all_t:
