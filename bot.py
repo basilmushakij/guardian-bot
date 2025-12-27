@@ -1,5 +1,5 @@
 # ==============================================================================
-# 🤖 PROJECT: THE ULTIMATE GUARDIAN (FIXED INDENTATION)
+# 🤖 PROJECT: THE ULTIMATE GUARDIAN (FINAL FIX)
 # ==============================================================================
 
 import os
@@ -19,7 +19,7 @@ import yfinance as yf
 from sklearn.preprocessing import MinMaxScaler
 from tensorflow.keras.models import Sequential, load_model
 from tensorflow.keras.layers import Dense, LSTM
-from duckduckgo_search import DDGS
+from duckduckgo_search import DDGS # 🦆 ฮีโร่สายฟรี
 
 # --- 🌐 WEB SERVER ---
 app = Flask('')
@@ -232,7 +232,7 @@ class TradeButtons(discord.ui.View):
 # ==============================================================================
 # 📱 COMMANDS
 # ==============================================================================
-@bot.tree.command(name="check", description="Full Analysis")
+@bot.tree.command(name="check", description="Full Analysis (Intel + Chain Reaction)")
 async def check(interaction: discord.Interaction, ticker: str):
     await interaction.response.defer()
     t = ticker.upper()
@@ -321,7 +321,8 @@ async def ninja_alert_task():
     while not bot.is_closed():
         portfolios = load_json(PORTFOLIOS_FILE)
         all_t = set()
-        # --- FIX: แยกบรรทัด Loop เพื่อแก้ Syntax Error ---
+        
+        # --- ✅ ส่วนที่แก้ไข: แยกบรรทัด Loop ให้ถูกต้อง ---
         for t_list in portfolios.values(): 
             for t in t_list: 
                 all_t.add(t)
