@@ -1,5 +1,5 @@
 # ==============================================================================
-# 🤖 PROJECT: THE ULTIMATE GUARDIAN (FINAL SYNTAX FIX)
+# 🤖 PROJECT: ULTIMATE GUARDIAN (FLASH EDITION + FIXES)
 # ==============================================================================
 
 import os
@@ -19,12 +19,12 @@ import yfinance as yf
 from sklearn.preprocessing import MinMaxScaler
 from tensorflow.keras.models import Sequential, load_model
 from tensorflow.keras.layers import Dense, LSTM
-from duckduckgo_search import DDGS
+from duckduckgo_search import DDGS # 🦆 ฮีโร่สายฟรี
 
 # --- 🌐 WEB SERVER ---
 app = Flask('')
 @app.route('/')
-def home(): return "SYSTEM ONLINE: Ultimate Engine Active."
+def home(): return "SYSTEM ONLINE: Flash Engine Active."
 def run(): app.run(host='0.0.0.0', port=8080)
 def keep_alive(): t = Thread(target=run); t.start()
 
@@ -39,28 +39,35 @@ PREDICTION_DAYS = 60
 try:
     if GEMINI_API_KEY:
         genai.configure(api_key=GEMINI_API_KEY)
-        model = genai.GenerativeModel('gemini-pro')
+        # 🔥 เปลี่ยนเป็นรุ่น Flash เพื่อความไวและแก้ปัญหา Token เต็ม
+        model = genai.GenerativeModel('gemini-1.5-flash')
 except: pass
 
 class MyBot(commands.Bot):
     def __init__(self):
         super().__init__(command_prefix='!', intents=discord.Intents.default())
     async def setup_hook(self):
-        await self.tree.sync() # บรรทัดนี้สำคัญ! มันจะซิงค์คำสั่ง / ไปที่ Discord
+        await self.tree.sync()
 
 bot = MyBot()
 
 # ==============================================================================
-# 🦆 FREE SEARCH ENGINE (DUCKDUCKGO)
+# 🦆 FREE SEARCH ENGINE (FIXED REGION)
 # ==============================================================================
 def search_free_intel(ticker):
+    """ใช้น้องเป็ดไปสืบข่าว (บังคับภาษาอังกฤษ + การเงิน)"""
     news_text = ""
     try:
-        keywords = f"{ticker} stock news rumors analysis"
-        results = DDGS().text(keywords, max_results=3)
+        # Keyword เจาะจงเรื่องหุ้น
+        keywords = f"{ticker} stock price finance market news analysis"
+        # บังคับ US English และเอาเฉพาะข่าวใหม่ (Day)
+        results = DDGS().text(keywords, region='us-en', timelimit='d', max_results=3)
         if results:
             for r in results:
-                news_text += f"- [Web] {r.get('title','')}: {r.get('body','')}\n"
+                title = r.get('title', '')
+                body = r.get('body', '')
+                if title:
+                    news_text += f"- [Web] {title}: {body[:200]}...\n"
     except Exception as e:
         print(f"DDG Error: {e}")
     return news_text
@@ -96,10 +103,11 @@ def check_fundamentals(ticker):
     except: return {"status": "ไม่ทราบ", "score": 0}
 
 def analyze_chain_reaction(ticker):
-    if not GEMINI_API_KEY: return "AI Disconnected"
+    if not GEMINI_API_KEY: return "AI Disconnected (Check Key)"
+    # ใช้ Flash model จะช่วยลด Error ได้เยอะ
     prompt = f"Analyze 'Chain Reaction' for stock {ticker} in Thai. 1. Suppliers/Customers? 2. If {ticker} crashes, who falls? Short & Concise."
     try: return model.generate_content(prompt).text
-    except: return "AI Error"
+    except: return "AI Error (Quota Full?)"
 
 def analyze_market(ticker):
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
@@ -135,7 +143,7 @@ def analyze_market(ticker):
              if sum(1 for i, r in insider.head(5).iterrows() if "sale" in str(r.get('Transaction','')).lower()) >= 2:
                  insider_txt = "🚨 เทขาย"
 
-        news_report = {"summary": "ไม่มีข่าว", "impact": "Low", "panic": False, "advice": "ถือต่อ"}
+        news_report = {"summary": "ไม่มีข่าวสำคัญ", "impact": "Low", "panic": False, "advice": "ถือต่อ"}
         all_headlines = ""
         try:
             news = stock.news[:3]
@@ -146,7 +154,7 @@ def analyze_market(ticker):
 
         if GEMINI_API_KEY and all_headlines.strip():
             try:
-                prompt = f"Analyze mixed news for '{ticker}':\n{all_headlines}\nTask: Summarize (Thai), Impact (Low/Med/Crit), Panic(YES/NO), Advice. Format:\nSummary: ...\nImpact: ...\nPanic: ...\nAdvice: ..."
+                prompt = f"Analyze news for '{ticker}':\n{all_headlines}\nTask: Summarize (Thai), Impact (Low/Med/Crit), Panic(YES/NO), Advice. Format:\nSummary: ...\nImpact: ...\nPanic: ...\nAdvice: ..."
                 res = model.generate_content(prompt).text
                 lines = res.split('\n')
                 for line in lines:
@@ -236,6 +244,8 @@ async def check(interaction: discord.Interaction, ticker: str):
     await interaction.response.defer()
     t = ticker.upper()
     loop = asyncio.get_running_loop()
+    
+    # รัน AI 2 ตัวพร้อมกัน (Market + Chain)
     d = await loop.run_in_executor(None, analyze_market, t)
     chain_res = await loop.run_in_executor(None, analyze_chain_reaction, t)
     
@@ -249,11 +259,15 @@ async def check(interaction: discord.Interaction, ticker: str):
         
         panic_icon = "😱 PANIC!" if rpt['panic'] else "😌 CHILL"
         em.add_field(name="🕵️ Intel Report", value=f"Summary: {rpt['summary']}\nPanic: {panic_icon}\nAdvice: {rpt['advice']}", inline=False)
+        
+        # แสดง Chain Reaction
         em.add_field(name="🔗 Chain Reaction", value=chain_res, inline=False)
-        if d['news_raw']: em.add_field(name="🌐 Sources", value=d['news_raw'][:300] + "...", inline=False)
+        
+        if d['news_raw']:
+            em.add_field(name="🌐 Sources", value=d['news_raw'][:300] + "...", inline=False)
 
         await interaction.followup.send(embed=em, view=TradeButtons(t))
-    else: await interaction.followup.send("❌ Error")
+    else: await interaction.followup.send("❌ Data Error (Check Ticker)")
 
 @bot.tree.command(name="wallet", description="View Portfolio")
 async def wallet(interaction: discord.Interaction):
@@ -312,7 +326,7 @@ async def teach(interaction: discord.Interaction, term: str):
     else: await interaction.followup.send("No API")
 
 # ==============================================================================
-# 🔔 ALERTS (FIXED INDENTATION)
+# 🔔 ALERTS
 # ==============================================================================
 @tasks.loop(seconds=1) 
 async def ninja_alert_task():
@@ -321,7 +335,7 @@ async def ninja_alert_task():
         portfolios = load_json(PORTFOLIOS_FILE)
         all_t = set()
         
-        # --- จุดที่แก้: เขียนแยกบรรทัดให้ถูกต้อง ---
+        # Loop แยกบรรทัด (ป้องกัน SyntaxError)
         for t_list in portfolios.values(): 
             for t in t_list: 
                 all_t.add(t)
@@ -354,7 +368,7 @@ async def ninja_alert_task():
 
 @bot.event
 async def on_ready():
-    print(f'🤖 Ultimate Bot Online: {bot.user}')
+    print(f'🤖 Flash Bot Online: {bot.user}')
     if not ninja_alert_task.is_running(): ninja_alert_task.start()
 
 if __name__ == "__main__":
