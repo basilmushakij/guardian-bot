@@ -249,6 +249,8 @@ async def check(ctx, ticker: str):
     else:
         await ctx.send(f"❌ ไม่พบข้อมูล {ticker}")
 
+keep_alive()
+
 if DISCORD_BOT_TOKEN == '...':
     print("Error...")
 else:
