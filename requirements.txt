@@ -1,0 +1,7 @@
+discord.py
+yfinance
+tensorflow-cpu
+pandas
+scikit-learn
+joblib
+numpy
