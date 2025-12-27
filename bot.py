@@ -1,5 +1,5 @@
 # ==============================================================================
-# 🤖 PROJECT: THE MASTERPIECE GUARDIAN (UI + NEWS ENGINE + FULL OPTION)
+# 🤖 PROJECT: THE ULTIMATE GUARDIAN (ALL FEATURES MERGED)
 # ==============================================================================
 
 import os
@@ -19,11 +19,12 @@ import yfinance as yf
 from sklearn.preprocessing import MinMaxScaler
 from tensorflow.keras.models import Sequential, load_model
 from tensorflow.keras.layers import Dense, LSTM
+from duckduckgo_search import DDGS # 🦆 ฮีโร่สายฟรี
 
 # --- 🌐 WEB SERVER ---
 app = Flask('')
 @app.route('/')
-def home(): return "SYSTEM ONLINE: Masterpiece Engine Active."
+def home(): return "SYSTEM ONLINE: Ultimate Engine Active."
 def run(): app.run(host='0.0.0.0', port=8080)
 def keep_alive(): t = Thread(target=run); t.start()
 
@@ -48,6 +49,24 @@ class MyBot(commands.Bot):
         await self.tree.sync()
 
 bot = MyBot()
+
+# ==============================================================================
+# 🦆 FREE SEARCH ENGINE (DUCKDUCKGO)
+# ==============================================================================
+def search_free_intel(ticker):
+    """ใช้น้องเป็ดไปสืบข่าวจากทั่วโลก (ฟรี)"""
+    news_text = ""
+    try:
+        # ค้นหาข่าวทั่วไป + ข่าวลือ + Reddit
+        keywords = f"{ticker} stock news rumors analysis"
+        # ใช้ DuckDuckGo ดึงข้อมูล 3-5 รายการล่าสุด
+        results = DDGS().text(keywords, max_results=3)
+        if results:
+            for r in results:
+                news_text += f"- [Web] {r.get('title','')}: {r.get('body','')}\n"
+    except Exception as e:
+        print(f"DDG Error: {e}")
+    return news_text
 
 # ==============================================================================
 # 🗄️ CORE LOGIC
@@ -79,6 +98,19 @@ def check_fundamentals(ticker):
         return {"status": status, "score": score}
     except: return {"status": "ไม่ทราบ", "score": 0}
 
+# 🔗 CHAIN REACTION ANALYSIS (Gemini)
+def analyze_chain_reaction(ticker):
+    """ถาม Gemini เรื่องผลกระทบลูกโซ่"""
+    if not GEMINI_API_KEY: return "AI Disconnected"
+    prompt = f"""
+    Analyze 'Chain Reaction' for stock {ticker} in Thai.
+    1. Who are major suppliers/customers?
+    2. If {ticker} crashes, which other stocks fall?
+    Short & Concise.
+    """
+    try: return model.generate_content(prompt).text
+    except: return "AI Error"
+
 def analyze_market(ticker):
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
     try:
@@ -107,7 +139,7 @@ def analyze_market(ticker):
         else: ai = load_model(m_file)
         pred = scaler.inverse_transform(ai.predict(X, verbose=0))[0][0]
         
-        # 3. Fundamentals & Insider
+        # 3. Fundamentals
         fund = check_fundamentals(ticker)
         stock = yf.Ticker(ticker)
         insider = stock.insider_transactions
@@ -116,39 +148,64 @@ def analyze_market(ticker):
              if sum(1 for i, r in insider.head(5).iterrows() if "sale" in str(r.get('Transaction','')).lower()) >= 2:
                  insider_txt = "🚨 เทขาย"
 
-        # 4. 🔥 NEWS SENTIMENT ENGINE (ฟีเจอร์เด็ดที่กู้คืนมา)
-        news_score = 0
-        news_headlines = "ไม่มีข่าวสำคัญ"
-        if GEMINI_API_KEY:
+        # 4. 📰 INTELLIGENCE REPORT (Yahoo + DuckDuckGo)
+        news_report = {"summary": "ไม่มีข่าว", "impact": "Low", "panic": False, "advice": "ถือต่อ"}
+        all_headlines = ""
+        
+        # Yahoo News
+        try:
+            news = stock.news[:3]
+            if news: all_headlines += "\n".join([f"- [Yahoo] {n['title']}" for n in news])
+        except: pass
+
+        # DuckDuckGo News
+        all_headlines += "\n" + search_free_intel(ticker)
+
+        if GEMINI_API_KEY and all_headlines.strip():
             try:
-                news = stock.news[:3]
-                if news:
-                    headlines = "\n".join([f"- {n['title']}" for n in news])
-                    # สั่ง Gemini ให้คะแนนข่าวเป็นตัวเลข (-1 ถึง 1)
-                    prompt = f"Analyze sentiment for these stock headlines. Return ONLY a number between -1.0 (Bad) to 1.0 (Good):\n{headlines}"
-                    res = model.generate_content(prompt)
-                    news_score = float(res.text.strip())
-                    news_headlines = headlines
+                prompt = f"""
+                Analyze mixed news for '{ticker}':
+                {all_headlines}
+                
+                Task:
+                1. Summarize in Thai.
+                2. Impact Level (Low/Medium/Critical).
+                3. Panic Check (YES/NO).
+                4. Advice (Buy/Sell/Wait).
+                
+                Format:
+                Summary: ...
+                Impact: ...
+                Panic: ...
+                Advice: ...
+                """
+                res = model.generate_content(prompt).text
+                lines = res.split('\n')
+                for line in lines:
+                    if "Summary:" in line: news_report['summary'] = line.replace("Summary:", "").strip()
+                    if "Impact:" in line: news_report['impact'] = line.replace("Impact:", "").strip()
+                    if "Panic:" in line: news_report['panic'] = "YES" in line.upper()
+                    if "Advice:" in line: news_report['advice'] = line.replace("Advice:", "").strip()
             except: pass
 
-        # 5. SCORING FORMULA
+        # 5. Scoring
         ai_score = np.clip(((pred - curr_price)/curr_price)*10, -1, 1)
         rsi_score = 1 if rsi < 30 else -1 if rsi > 70 else 0
         fund_adj = (fund['score']-1)/2
+        panic_score = -1.0 if news_report['panic'] else 0.2
         
-        # สูตรลับ: ให้ข่าวมีผล 20% ของการตัดสินใจ
-        final_score = (ai_score*0.3) + (rsi_score*0.2) + (fund_adj*0.3) + (news_score*0.2)
-        
-        if fund['score'] == -1: final_score = -1.0 # พื้นฐานแย่ ห้ามซื้อ
+        final_score = (ai_score*0.3) + (rsi_score*0.2) + (fund_adj*0.3) + (panic_score*0.2)
+        if fund['score'] == -1: final_score = -1.0
         
         signal = "HOLD ✋"; color = 0x95a5a6
         if final_score > 0.35: signal = "BUY 🟢"; color = 0x2ecc71
         elif final_score < -0.35: signal = "SELL 🔴"; color = 0xe74c3c
-        
+        if news_report['panic']: signal = "PANIC SELL 🚨"; color = 0xff0000
+
         return {
             "price": curr_price, "signal": signal, "score": final_score, 
             "color": color, "fund": fund, "insider": insider_txt,
-            "news_score": news_score, "news_txt": news_headlines # ส่งข้อมูลข่าวกลับไปด้วย
+            "news_report": news_report, "news_raw": all_headlines
         }
     except: return None
 
@@ -160,51 +217,37 @@ class TradeModal(discord.ui.Modal):
         super().__init__(title=f"{action} Stock")
         self.ticker = ticker; self.action = action
         self.amount = discord.ui.TextInput(label="Amount", placeholder="10", required=True)
-        self.price = discord.ui.TextInput(label="Price (Optional)", placeholder="Leave empty for Market Price", required=False)
+        self.price = discord.ui.TextInput(label="Price", placeholder="Optional", required=False)
         self.add_item(self.amount); self.add_item(self.price)
-
     async def on_submit(self, interaction: discord.Interaction):
         try:
             amt = int(self.amount.value)
             p = float(self.price.value) if self.price.value else None
             data = load_json(TRADING_FILE); prof = data.get(str(interaction.user.id))
-            if not prof: await interaction.response.send_message("❌ Please `/register` first", ephemeral=True); return
-            
+            if not prof: await interaction.response.send_message("❌ Register first", ephemeral=True); return
             rate = get_usd_thb_rate()
             if self.action == "BUY":
                 curr = p if p else yf.Ticker(self.ticker).history(period="1d")['Close'].iloc[-1]
                 cost = curr*amt
-                if not p and prof['balance'] < cost: await interaction.response.send_message("❌ Not enough money", ephemeral=True); return
+                if not p and prof['balance'] < cost: await interaction.response.send_message("❌ No Money", ephemeral=True); return
                 prof['balance'] -= cost
-                
-                # Logic ถัวเฉลี่ย
                 if self.ticker in prof['portfolio']:
-                    old = prof['portfolio'][self.ticker]
-                    oa = old['amount'] if isinstance(old, dict) else old
-                    oc = old['cost'] if isinstance(old, dict) else curr
+                    old = prof['portfolio'][self.ticker]; oa = old['amount'] if isinstance(old, dict) else old; oc = old['cost'] if isinstance(old, dict) else curr
                     prof['portfolio'][self.ticker] = {"amount": oa+amt, "cost": ((oa*oc)+(amt*curr))/(oa+amt)}
                 else: prof['portfolio'][self.ticker] = {"amount": amt, "cost": curr}
-                
                 save_json(TRADING_FILE, data)
-                await interaction.response.send_message(f"✅ BOUGHT {amt} {self.ticker}\n💵 Cost: ${cost:,.2f} (฿{cost*rate:,.0f})")
-
+                await interaction.response.send_message(f"✅ BOUGHT {amt} {self.ticker}")
             elif self.action == "SELL":
-                if self.ticker not in prof['portfolio']: await interaction.response.send_message("❌ You don't own this stock", ephemeral=True); return
-                item = prof['portfolio'][self.ticker]
-                oa = item['amount'] if isinstance(item, dict) else item
-                if oa < amt: await interaction.response.send_message("❌ Not enough shares", ephemeral=True); return
-                
+                if self.ticker not in prof['portfolio']: await interaction.response.send_message("❌ No Stock", ephemeral=True); return
+                item = prof['portfolio'][self.ticker]; oa = item['amount'] if isinstance(item, dict) else item
+                if oa < amt: await interaction.response.send_message("❌ Not enough", ephemeral=True); return
                 curr = p if p else yf.Ticker(self.ticker).history(period="1d")['Close'].iloc[-1]
-                income = curr*amt
-                prof['balance'] += income
-                
+                income = curr*amt; prof['balance'] += income
                 if oa == amt: del prof['portfolio'][self.ticker]
                 else: prof['portfolio'][self.ticker]['amount'] = oa - amt
-                
                 save_json(TRADING_FILE, data)
-                await interaction.response.send_message(f"✅ SOLD {amt} {self.ticker}\n💰 Income: ${income:,.2f} (฿{income*rate:,.0f})")
-
-        except: await interaction.response.send_message("❌ Invalid Input", ephemeral=True)
+                await interaction.response.send_message(f"✅ SOLD {amt} {self.ticker}")
+        except: await interaction.response.send_message("❌ Error", ephemeral=True)
 
 class TradeButtons(discord.ui.View):
     def __init__(self, ticker): super().__init__(timeout=None); self.ticker = ticker
@@ -215,47 +258,48 @@ class TradeButtons(discord.ui.View):
     @discord.ui.button(label="Watch", style=discord.ButtonStyle.blurple, emoji="⭐")
     async def w(self, i: discord.Interaction, b: discord.ui.Button):
         uid=str(i.user.id); p=load_json(PORTFOLIOS_FILE); up=p.get(uid,[])
-        if self.ticker not in up: up.append(self.ticker); p[uid]=up; save_json(PORTFOLIOS_FILE,p); await i.response.send_message("✅ Added to Watchlist", ephemeral=True)
-        else: await i.response.send_message("👀 Already watching", ephemeral=True)
+        if self.ticker not in up: up.append(self.ticker); p[uid]=up; save_json(PORTFOLIOS_FILE,p); await i.response.send_message("✅ Added", ephemeral=True)
+        else: await i.response.send_message("👀 Watching", ephemeral=True)
 
 # ==============================================================================
 # 📱 COMMANDS
 # ==============================================================================
-@bot.tree.command(name="check", description="Analyze stock with AI & News Engine")
+@bot.tree.command(name="check", description="Full Analysis (Intel + Chain Reaction)")
 async def check(interaction: discord.Interaction, ticker: str):
     await interaction.response.defer()
     t = ticker.upper()
     loop = asyncio.get_running_loop()
+    
+    # 1. วิเคราะห์ตลาด + ข่าว (Yahoo + DuckDuckGo)
     d = await loop.run_in_executor(None, analyze_market, t)
+    
+    # 2. วิเคราะห์ลูกโซ่ (Chain Reaction)
+    chain_res = await loop.run_in_executor(None, analyze_chain_reaction, t)
     
     if d:
         thb = d['price'] * get_usd_thb_rate()
-        em = discord.Embed(title=f"💎 Report: {t}", color=d['color'])
-        em.description=f"Signal: **{d['signal']}** (Score: {d['score']:.2f})\nPrice: ${d['price']:.2f} (฿{thb:,.0f})\nFund: {d['fund']['status']}\nInsider: {d['insider']}"
+        rpt = d['news_report']
+        emb_color = 0xff0000 if rpt['panic'] else d['color']
         
-        # แสดงคะแนนข่าวให้เห็นชัดๆ ว่าบอทคิดจากข่าวด้วย
-        news_sentiment = "😐 เฉยๆ"
-        if d['news_score'] > 0.3: news_sentiment = "😃 ข่าวดี"
-        elif d['news_score'] < -0.3: news_sentiment = "😱 ข่าวร้าย"
-        em.add_field(name="📰 News Analysis", value=f"{news_sentiment} (Score: {d['news_score']:.2f})", inline=True)
+        em = discord.Embed(title=f"💎 Ultimate Report: {t}", color=emb_color)
+        em.add_field(name="📊 Market Data", value=f"Price: ${d['price']:.2f} (฿{thb:,.0f})\nSignal: **{d['signal']}**", inline=True)
         
-        if GEMINI_API_KEY:
-            try: 
-                # ส่งข้อมูลข่าวให้ Mentor สรุปด้วย
-                prompt = f"Summarize {t} for a beginner based on this data: {d}. Mention the news sentiment."
-                res = model.generate_content(prompt)
-                em.add_field(name="👨‍🏫 AI Mentor", value=res.text, inline=False)
-            except: pass
-            
+        panic_icon = "😱 PANIC!" if rpt['panic'] else "😌 CHILL"
+        em.add_field(name="🕵️ Intel Report (DuckDuckGo+Yahoo)", value=f"Summary: {rpt['summary']}\nPanic: {panic_icon}\nAdvice: {rpt['advice']}", inline=False)
+        
+        em.add_field(name="🔗 Chain Reaction", value=chain_res, inline=False)
+        
+        if d['news_raw']:
+            em.add_field(name="🌐 Sources", value=d['news_raw'][:300] + "...", inline=False)
+
         await interaction.followup.send(embed=em, view=TradeButtons(t))
-    else: await interaction.followup.send("❌ Data not found")
+    else: await interaction.followup.send("❌ Error")
 
 @bot.tree.command(name="wallet", description="View Portfolio")
 async def wallet(interaction: discord.Interaction):
     await interaction.response.defer()
     d = get_trader_profile(interaction.user.id); rate = get_usd_thb_rate()
-    embed = discord.Embed(title=f"🇹🇭 Portfolio: {interaction.user.name}", color=0x3498db)
-    
+    embed = discord.Embed(title=f"🇹🇭 Portfolio", color=0x3498db)
     curr_val = 0; txt = ""
     if d['portfolio']:
         for t, info in d['portfolio'].items():
@@ -264,9 +308,8 @@ async def wallet(interaction: discord.Interaction):
             if isinstance(info, dict): amt=info['amount']; cost=info['cost']
             else: amt=info; cost=cp
             prof = (amt*cp)-(amt*cost); icon = "🟢" if prof >= 0 else "🔴"
-            txt += f"**{t}**: {amt} | Cost ${cost:.2f} | {icon} ${prof:+,.2f}\n"
+            txt += f"**{t}**: {amt} | ${cost:.2f} | {icon} ${prof:+,.2f}\n"
             curr_val += amt*cp
-            
     cash = d['balance']
     embed.add_field(name=f"💵 Cash", value=f"${cash:,.2f} (฿{cash*rate:,.0f})", inline=False)
     if txt: embed.add_field(name="📈 Stocks", value=txt, inline=False)
@@ -276,40 +319,40 @@ async def wallet(interaction: discord.Interaction):
 @bot.tree.command(name="register", description="Open Account")
 async def register(interaction: discord.Interaction):
     d = get_trader_profile(interaction.user.id)
-    await interaction.response.send_message(f"🎉 Account Ready! Balance: ${d['balance']:,.2f}")
+    await interaction.response.send_message(f"🎉 Ready! Balance: ${d['balance']:,.2f}")
 
-@bot.tree.command(name="setcost", description="Fix stock cost")
+@bot.tree.command(name="setcost", description="Fix cost")
 async def setcost(interaction: discord.Interaction, ticker: str, price: float):
     d = load_json(TRADING_FILE); uid = str(interaction.user.id); t = ticker.upper()
     if uid in d and t in d[uid]['portfolio']:
         d[uid]['portfolio'][t]['cost'] = price; save_json(TRADING_FILE, d)
-        await interaction.response.send_message(f"✅ Updated cost for {t}")
-    else: await interaction.response.send_message("❌ Stock not found")
+        await interaction.response.send_message(f"✅ Updated")
+    else: await interaction.response.send_message("❌ Not found")
 
-@bot.tree.command(name="scan", description="Scan Watchlist Now")
+@bot.tree.command(name="scan", description="Scan Watchlist")
 async def scan(interaction: discord.Interaction):
     await interaction.response.defer()
     p = load_json(PORTFOLIOS_FILE).get(str(interaction.user.id), [])
-    if not p: await interaction.followup.send("📭 Empty Watchlist"); return
+    if not p: await interaction.followup.send("📭 Empty"); return
     await interaction.followup.send(f"🔎 Scanning {len(p)} stocks...")
     loop = asyncio.get_running_loop()
     for t in p:
         d = await loop.run_in_executor(None, analyze_market, t)
         if d:
+            rpt = d['news_report']
+            icon = "🚨" if rpt['panic'] else "✅"
             em = discord.Embed(title=f"{t}: {d['signal']}", color=d['color'])
-            em.description=f"Price: ${d['price']:.2f}\nFund: {d['fund']['status']}"
+            em.description=f"Price: ${d['price']:.2f}\n{icon} Panic: {rpt['panic']}"
             await interaction.followup.send(embed=em)
 
-@bot.tree.command(name="teach", description="Learn stock terms")
+@bot.tree.command(name="teach", description="Teach terms")
 async def teach(interaction: discord.Interaction, term: str):
     await interaction.response.defer()
-    if GEMINI_API_KEY:
-        res = model.generate_content(f"Teach '{term}' simply in Thai.")
-        await interaction.followup.send(f"🎓 **{term}:**\n{res.text}")
+    if GEMINI_API_KEY: await interaction.followup.send(f"🎓 **{term}:**\n{model.generate_content(f'Teach {term} in Thai simple').text}")
     else: await interaction.followup.send("No API")
 
 # ==============================================================================
-# 🔔 NINJA ALERTS
+# 🔔 ALERTS
 # ==============================================================================
 @tasks.loop(seconds=1) 
 async def ninja_alert_task():
@@ -317,8 +360,7 @@ async def ninja_alert_task():
     while not bot.is_closed():
         portfolios = load_json(PORTFOLIOS_FILE)
         all_t = set()
-        for t_list in portfolios.values(): 
-            for t in t_list: all_t.add(t)
+        for t_list in portfolios.values(): for t in t_list: all_t.add(t)
         if not all_t: await asyncio.sleep(60); continue
         
         for t in all_t:
@@ -326,9 +368,18 @@ async def ninja_alert_task():
                 await asyncio.sleep(random.uniform(5, 10))
                 loop = asyncio.get_running_loop()
                 d = await loop.run_in_executor(None, analyze_market, t)
-                if d and "NOW" in d['signal']:
-                    em = discord.Embed(title=f"🚨 ALERT: {t}", color=d['color'])
-                    em.description = f"{d['signal']} @ ${d['price']:.2f}\nNews Score: {d['news_score']:.2f}"
+                
+                if d and ("NOW" in d['signal'] or d['news_report']['panic']):
+                    rpt = d['news_report']
+                    is_panic = rpt['panic']
+                    title = f"🚨 PANIC: {t}" if is_panic else f"📢 ALERT: {t}"
+                    color = 0xff0000 if is_panic else d['color']
+                    
+                    em = discord.Embed(title=title, color=color)
+                    em.add_field(name="สถานการณ์", value=rpt['summary'], inline=False)
+                    em.add_field(name="คำแนะนำ", value=f"👉 **{rpt['advice']}**", inline=False)
+                    em.set_footer(text="Ultimate Watchdog")
+                    
                     for uid, ts in portfolios.items():
                         if t in ts:
                             try: await bot.get_user(int(uid)).send(embed=em)
@@ -338,7 +389,7 @@ async def ninja_alert_task():
 
 @bot.event
 async def on_ready():
-    print(f'🤖 Masterpiece Bot Online: {bot.user}')
+    print(f'🤖 Ultimate Bot Online: {bot.user}')
     if not ninja_alert_task.is_running(): ninja_alert_task.start()
 
 if __name__ == "__main__":
